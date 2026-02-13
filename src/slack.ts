@@ -22,14 +22,14 @@ export async function sendSlackMessage(
 ): Promise<void> {
   const header = `*${connections.length} new LinkedIn connection${connections.length === 1 ? "" : "s"} today:*\n`;
 
-  const lines = connections.map((c) => {
+  const blocks = connections.map((c) => {
     const name = `${c.firstName} ${c.lastName}`.trim();
     const title = c.headline || "No title";
     const company = c.company || "—";
-    return `• <${c.profileUrl}|${name}> — ${title} · ${company}`;
+    return `*<${c.profileUrl}|${name}>*\n  • ${title}\n  • ${company}`;
   });
 
-  const text = header + lines.join("\n");
+  const text = header + blocks.join("\n\n");
 
   const res = await fetch(webhookUrl, {
     method: "POST",
