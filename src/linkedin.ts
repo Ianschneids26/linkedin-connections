@@ -1,3 +1,8 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+
 export interface LinkedInConnection {
   id: string;
   firstName: string;
@@ -11,55 +16,41 @@ export interface LinkedInConnection {
 const VOYAGER_BASE = "https://www.linkedin.com/voyager/api";
 const CONNECTIONS_ENDPOINT = `${VOYAGER_BASE}/relationships/dash/connections`;
 
-async function getSessionCookies(
-  liAtCookie: string,
-): Promise<{ jsessionid: string; allCookies: string }> {
-  const res = await fetch("https://www.linkedin.com/", {
-    headers: {
-      cookie: `li_at=${liAtCookie}`,
-      "user-agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    },
-    redirect: "manual",
-  });
+const JSESSIONID = "ajax:0000000000000000000";
+const USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-  const setCookies = res.headers.getSetCookie?.() ?? [];
-  let jsessionid = "";
-  for (const cookie of setCookies) {
-    const match = cookie.match(/JSESSIONID="?([^";]+)"?/);
-    if (match) {
-      jsessionid = match[1];
-      break;
+// Use curl instead of Node fetch to avoid TLS fingerprint detection
+// by LinkedIn/Cloudflare, which blocks Node's undici-based fetch.
+async function curlJson(url: string, liAtCookie: string): Promise<{ status: number; data: any }> {
+  const cookies = `li_at=${liAtCookie}; JSESSIONID="${JSESSIONID}"`;
+  const { stdout } = await execFileAsync("curl", [
+    "-s",
+    "-w", "\n__HTTP_STATUS__:%{http_code}",
+    url,
+    "-H", `cookie: ${cookies}`,
+    "-H", `csrf-token: ${JSESSIONID}`,
+    "-H", "x-li-lang: en_US",
+    "-H", `x-li-track: ${JSON.stringify({ clientVersion: "1.13.8677", osName: "web" })}`,
+    "-H", "x-restli-protocol-version: 2.0.0",
+    "-H", `user-agent: ${USER_AGENT}`,
+    "-H", "accept: application/vnd.linkedin.normalized+json+2.1",
+  ], { maxBuffer: 10 * 1024 * 1024 });
+
+  const statusMatch = stdout.match(/__HTTP_STATUS__:(\d+)$/);
+  const status = statusMatch ? parseInt(statusMatch[1]) : 0;
+  const body = stdout.replace(/__HTTP_STATUS__:\d+$/, "").trim();
+
+  let data: any = null;
+  if (body) {
+    try {
+      data = JSON.parse(body);
+    } catch {
+      // Not JSON — could be an error page
     }
   }
 
-  if (!jsessionid) {
-    throw new Error("Failed to obtain JSESSIONID from LinkedIn");
-  }
-
-  return {
-    jsessionid,
-    allCookies: `li_at=${liAtCookie}; JSESSIONID="${jsessionid}"`,
-  };
-}
-
-function buildHeaders(
-  allCookies: string,
-  jsessionid: string,
-): Record<string, string> {
-  return {
-    cookie: allCookies,
-    "csrf-token": jsessionid,
-    "x-li-lang": "en_US",
-    "x-li-track": JSON.stringify({
-      clientVersion: "1.13.8677",
-      osName: "web",
-    }),
-    "x-restli-protocol-version": "2.0.0",
-    "user-agent":
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    accept: "application/vnd.linkedin.normalized+json+2.1",
-  };
+  return { status, data };
 }
 
 function parseConnections(data: any): LinkedInConnection[] {
@@ -110,9 +101,6 @@ export async function fetchRecentConnections(
   liAtCookie: string,
   count = 40,
 ): Promise<LinkedInConnection[]> {
-  const { jsessionid, allCookies } = await getSessionCookies(liAtCookie);
-  const headers = buildHeaders(allCookies, jsessionid);
-
   const decorationIds = [
     "com.linkedin.voyager.dash.deco.web.mynetwork.ConnectionListWithProfile-5",
     "com.linkedin.voyager.dash.deco.web.mynetwork.ConnectionListWithProfile-4",
@@ -129,13 +117,10 @@ export async function fetchRecentConnections(
       start: "0",
     });
 
-    const res = await fetch(`${CONNECTIONS_ENDPOINT}?${params}`, { headers });
+    const { status, data } = await curlJson(`${CONNECTIONS_ENDPOINT}?${params}`, liAtCookie);
 
-    if (res.ok) {
-      const data: any = await res.json();
-      if (data?.included?.length > 0) {
-        return parseConnections(data);
-      }
+    if (status === 200 && data?.included?.length > 0) {
+      return parseConnections(data);
     }
   }
 
@@ -147,16 +132,20 @@ export async function fetchRecentConnections(
     start: "0",
   });
 
-  const res = await fetch(`${CONNECTIONS_ENDPOINT}?${params}`, { headers });
+  const { status, data } = await curlJson(`${CONNECTIONS_ENDPOINT}?${params}`, liAtCookie);
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(
-      `LinkedIn API error ${res.status}: ${body.slice(0, 500)}`,
-    );
+  if (status === 302 || status === 301) {
+    throw new Error("LinkedIn API returned 302 redirect — li_at cookie may be invalid");
   }
 
-  const data: any = await res.json();
+  if (status === 401 || status === 403) {
+    throw new Error(`LinkedIn API error ${status}`);
+  }
+
+  if (status !== 200) {
+    throw new Error(`LinkedIn API error ${status}: ${JSON.stringify(data)?.slice(0, 500)}`);
+  }
+
   return parseConnections(data);
 }
 

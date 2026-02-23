@@ -10,7 +10,7 @@ export async function withRetry<T>(
       const msg = err?.message ?? String(err);
 
       // Don't retry auth errors — they won't resolve on retry
-      if (msg.includes("401") || msg.includes("403") || msg.includes("JSESSIONID")) {
+      if (msg.includes("401") || msg.includes("403") || msg.includes("302") || msg.includes("JSESSIONID")) {
         throw err;
       }
 
