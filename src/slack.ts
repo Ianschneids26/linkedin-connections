@@ -1,4 +1,5 @@
 import type { LinkedInConnection } from "./linkedin.js";
+import type { StoredConnection } from "./store.js";
 
 export async function sendSlackText(
   webhookUrl: string,
@@ -30,6 +31,39 @@ export async function sendSlackMessage(
   });
 
   const text = header + blocks.join("\n\n");
+
+  const res = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Slack webhook error ${res.status}: ${body}`);
+  }
+}
+
+export async function sendRecapMessage(
+  webhookUrl: string,
+  connections: StoredConnection[],
+): Promise<void> {
+  let text: string;
+
+  if (connections.length === 0) {
+    text = "No new LinkedIn connections in the last 24 hours.";
+  } else {
+    const header = `*Daily LinkedIn recap — ${connections.length} new connection${connections.length === 1 ? "" : "s"} in the last 24h:*\n`;
+
+    const blocks = connections.map((c) => {
+      const name = `${c.firstName} ${c.lastName}`.trim();
+      const title = c.headline || "No title";
+      const company = c.company || "—";
+      return `*<${c.profileUrl}|${name}>*\n  • ${title}\n  • ${company}`;
+    });
+
+    text = header + blocks.join("\n\n");
+  }
 
   const res = await fetch(webhookUrl, {
     method: "POST",
