@@ -24,10 +24,14 @@ async function main(): Promise<void> {
     });
   } catch (err: any) {
     const msg = err?.message ?? String(err);
+    if (msg.includes("rate limited")) {
+      console.error("Rate limited, will retry next cycle:", msg);
+      process.exit(0);
+    }
     if (
       msg.includes("401") ||
       msg.includes("403") ||
-      msg.includes("302") ||
+      msg.includes("auth redirect") ||
       msg.includes("JSESSIONID")
     ) {
       console.error("LinkedIn auth failed:", msg);
