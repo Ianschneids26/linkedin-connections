@@ -2,7 +2,7 @@ import "dotenv/config";
 import { getConnectionsSince } from "./store.js";
 import { sendRecapMessage } from "./slack.js";
 
-const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 async function main(): Promise<void> {
   const webhookUrl = process.env.SLACK_WEBHOOK_URL;
@@ -12,10 +12,10 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const since = Date.now() - TWENTY_FOUR_HOURS_MS;
+  const since = Date.now() - SEVEN_DAYS_MS;
   const connections = getConnectionsSince(since);
 
-  console.log(`Recap: ${connections.length} connection(s) in the last 24h`);
+  console.log(`Recap: ${connections.length} connection(s) in the last 7 days`);
   await sendRecapMessage(webhookUrl, connections);
   console.log("Recap sent to Slack");
 }

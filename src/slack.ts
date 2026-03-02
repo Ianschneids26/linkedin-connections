@@ -51,9 +51,9 @@ export async function sendRecapMessage(
   let text: string;
 
   if (connections.length === 0) {
-    text = "No new LinkedIn connections in the last 24 hours.";
+    text = "No new LinkedIn connections this week.";
   } else {
-    const header = `*Daily LinkedIn recap — ${connections.length} new connection${connections.length === 1 ? "" : "s"} in the last 24h:*\n`;
+    const header = `*Weekly LinkedIn recap — ${connections.length} new connection${connections.length === 1 ? "" : "s"} this week:*\n`;
 
     const blocks = connections.map((c) => {
       const name = `${c.firstName} ${c.lastName}`.trim();
