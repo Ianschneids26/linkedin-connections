@@ -1,6 +1,6 @@
 # LinkedIn Connections Notifier
 
-Fetches new LinkedIn connections daily and sends a Slack summary.
+Fetches new LinkedIn connections and sends a weekly Slack summary.
 
 ## Commands
 
@@ -22,4 +22,5 @@ Fetches new LinkedIn connections daily and sends a Slack summary.
 ## Scheduling
 
 - `com.linkedin-connections.daily.plist` — macOS launchd job, runs at 4 PM daily
-- Install: `cp com.linkedin-connections.daily.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.linkedin-connections.daily.plist`
+- `com.linkedin-connections.daily-recap.plist` — macOS launchd job, sends weekly Slack recap every Monday at 6 AM
+- Install: `cp com.linkedin-connections.daily.plist com.linkedin-connections.daily-recap.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.linkedin-connections.daily.plist ~/Library/LaunchAgents/com.linkedin-connections.daily-recap.plist`
