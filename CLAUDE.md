@@ -10,7 +10,9 @@ Fetches new LinkedIn connections and sends a weekly Slack summary.
 
 ## Architecture
 
-- `src/index.ts` — persistent entry point with node-cron scheduling (connection check every 30 min, weekly recap Mondays 06:00 UTC)
+- `config.json` — all client-specific settings (schedule, limits, client name). Only file that changes per client.
+- `src/config.ts` — loads and validates config.json, exports typed config + cron expression builders
+- `src/index.ts` — persistent entry point with node-cron scheduling driven by config.json
 - `src/linkedin.ts` — LinkedIn Voyager API client (uses li_at cookie)
 - `src/store.ts` — tracks seen connections in `data/seen-connections.json` (DATA_DIR configurable via env)
 - `src/slack.ts` — sends formatted message via Slack Incoming Webhook

@@ -1,5 +1,6 @@
 import "dotenv/config";
 import cron from "node-cron";
+import { config, pollingCron, recapCron } from "./config.js";
 import { fetchRecentConnections } from "./linkedin.js";
 import { filterNewConnections, markAsSeen, getConnectionsSince } from "./store.js";
 import { sendSlackMessage, sendSlackText, sendRecapMessage } from "./slack.js";
@@ -24,9 +25,10 @@ async function checkConnections(): Promise<void> {
 
   let all;
   try {
-    all = await withRetry(() => fetchRecentConnections(liAt!), {
-      label: "LinkedIn fetch",
-    });
+    all = await withRetry(
+      () => fetchRecentConnections(liAt!, config.max_connections_to_fetch),
+      { label: "LinkedIn fetch" },
+    );
   } catch (err: any) {
     const msg = err?.message ?? String(err);
     if (msg.includes("rate limited")) {
@@ -77,24 +79,30 @@ async function weeklyRecap(): Promise<void> {
 
 // --- Scheduling ---
 
-// Check for new connections every 30 minutes
-cron.schedule("*/30 * * * *", () => {
+const pollExpr = pollingCron();
+cron.schedule(pollExpr, () => {
   checkConnections().catch((err) =>
     console.error(`[${new Date().toISOString()}] Connection check error:`, err),
   );
 });
 
-// Weekly recap every Monday at 6:00 AM UTC
-cron.schedule("0 6 * * 1", () => {
-  weeklyRecap().catch((err) =>
-    console.error(`[${new Date().toISOString()}] Weekly recap error:`, err),
-  );
-});
+if (config.weekly_recap_enabled) {
+  const recapExpr = recapCron();
+  cron.schedule(recapExpr, () => {
+    weeklyRecap().catch((err) =>
+      console.error(`[${new Date().toISOString()}] Weekly recap error:`, err),
+    );
+  });
+}
 
-// Run an initial check on startup
-console.log("LinkedIn Connections notifier started");
-console.log("  - Connection check: every 30 minutes");
-console.log("  - Weekly recap: Mondays at 06:00 UTC");
+// Startup
+console.log(`LinkedIn Connections notifier started for ${config.client_name}`);
+console.log(`  - Connection check: every ${config.polling_interval_minutes} minutes`);
+if (config.weekly_recap_enabled) {
+  console.log(`  - Weekly recap: ${config.weekly_recap_day}s at ${config.weekly_recap_time_utc} UTC`);
+} else {
+  console.log("  - Weekly recap: disabled");
+}
 
 checkConnections().catch((err) =>
   console.error(`[${new Date().toISOString()}] Initial check error:`, err),

@@ -1,0 +1,9 @@
+{
+  "client_name": "Client Name Here",
+  "slack_channel": "#linkedin-daily-acceptances",
+  "polling_interval_minutes": 30,
+  "weekly_recap_enabled": true,
+  "weekly_recap_day": "Monday",
+  "weekly_recap_time_utc": "06:00",
+  "max_connections_to_fetch": 40
+}
