@@ -2,6 +2,8 @@
 
 Monitors a LinkedIn account for new connections and sends real-time Slack notifications. Includes an optional weekly recap.
 
+**Important: The LinkedIn session cookie (`li_at`) expires every few weeks. When it does, the app stops working. You will need to grab a fresh cookie from your browser and update the `LINKEDIN_LI_AT` environment variable in Railway. This takes about 2 minutes.**
+
 ## What this app does
 
 - Polls LinkedIn on a configurable interval (default: every 30 minutes) for newly accepted connections
@@ -48,6 +50,15 @@ Monitors a LinkedIn account for new connections and sends real-time Slack notifi
 5. Set it as the `LINKEDIN_LI_AT` environment variable
 
 > The `li_at` cookie expires periodically. When it does, the app will send a Slack alert. Grab a fresh cookie and update the environment variable.
+
+## How to create a Slack webhook
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps)
+2. Click **Create New App**, then **From Scratch**
+3. Name the app anything (e.g. "LI Connections") and select your workspace
+4. In the left sidebar, click **Incoming Webhooks** and toggle it on
+5. Click **Add New Webhook to Workspace**, choose the channel you want notifications in, and click **Allow**
+6. Copy the webhook URL that starts with `https://hooks.slack.com/services/...`
 
 ## How to deploy to Railway
 

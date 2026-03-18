@@ -7,6 +7,7 @@ export interface LinkedInConnection {
   headline: string;
   company: string;
   profileUrl: string;
+  profileImageUrl: string;
   connectedAt: number;
 }
 
@@ -76,6 +77,7 @@ function parseConnections(data: any): LinkedInConnection[] {
         profileUrl: publicId
           ? `https://www.linkedin.com/in/${publicId}`
           : "",
+        profileImageUrl: extractProfileImage(profile),
         connectedAt: el.createdAt ?? Date.now(),
       });
     }
@@ -184,6 +186,18 @@ export async function fetchRecentConnections(
   } finally {
     await browser.close();
   }
+}
+
+function extractProfileImage(profile: any): string {
+  const picture =
+    profile.profilePicture?.displayImageReference?.vectorImage ??
+    profile.picture?.displayImageReference?.vectorImage;
+  if (!picture?.artifacts?.length || !picture.rootUrl) return "";
+  // Pick the largest artifact
+  const sorted = [...picture.artifacts].sort(
+    (a: any, b: any) => (b.width ?? 0) - (a.width ?? 0),
+  );
+  return picture.rootUrl + sorted[0].fileIdentifyingUrlPathSegment;
 }
 
 function extractCompany(headline: string | undefined): string | undefined {
