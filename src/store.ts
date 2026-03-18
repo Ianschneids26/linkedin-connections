@@ -2,11 +2,9 @@ import fs from "node:fs";
 import path from "node:path";
 import type { LinkedInConnection } from "./linkedin.js";
 
-const DATA_DIR = path.join(
-  path.dirname(new URL(import.meta.url).pathname),
-  "..",
-  "data",
-);
+const DATA_DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.join(path.dirname(new URL(import.meta.url).pathname), "..", "data");
 const STORE_PATH = path.join(DATA_DIR, "seen-connections.json");
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;

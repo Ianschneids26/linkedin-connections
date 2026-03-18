@@ -1,32 +1,37 @@
 import "dotenv/config";
+import cron from "node-cron";
 import { fetchRecentConnections } from "./linkedin.js";
-import { filterNewConnections, markAsSeen } from "./store.js";
-import { sendSlackMessage, sendSlackText } from "./slack.js";
+import { filterNewConnections, markAsSeen, getConnectionsSince } from "./store.js";
+import { sendSlackMessage, sendSlackText, sendRecapMessage } from "./slack.js";
 import { withRetry } from "./retry.js";
 
-async function main(): Promise<void> {
-  const liAt = process.env.LINKEDIN_LI_AT;
-  const webhookUrl = process.env.SLACK_WEBHOOK_URL;
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
-  if (!liAt) {
-    console.error("Missing LINKEDIN_LI_AT in .env");
-    process.exit(1);
-  }
-  if (!webhookUrl) {
-    console.error("Missing SLACK_WEBHOOK_URL in .env");
-    process.exit(1);
-  }
+const liAt = process.env.LINKEDIN_LI_AT;
+const webhookUrl = process.env.SLACK_WEBHOOK_URL;
+
+if (!liAt) {
+  console.error("Missing LINKEDIN_LI_AT environment variable");
+  process.exit(1);
+}
+if (!webhookUrl) {
+  console.error("Missing SLACK_WEBHOOK_URL environment variable");
+  process.exit(1);
+}
+
+async function checkConnections(): Promise<void> {
+  console.log(`[${new Date().toISOString()}] Checking for new connections...`);
 
   let all;
   try {
-    all = await withRetry(() => fetchRecentConnections(liAt), {
+    all = await withRetry(() => fetchRecentConnections(liAt!), {
       label: "LinkedIn fetch",
     });
   } catch (err: any) {
     const msg = err?.message ?? String(err);
     if (msg.includes("rate limited")) {
       console.error("Rate limited, will retry next cycle:", msg);
-      process.exit(0);
+      return;
     }
     if (
       msg.includes("401") ||
@@ -36,13 +41,13 @@ async function main(): Promise<void> {
     ) {
       console.error("LinkedIn auth failed:", msg);
       await sendSlackText(
-        webhookUrl,
-        "⚠️ LinkedIn connection sync failed — your `li_at` cookie has likely expired. Grab a fresh one from your browser and update `.env`.",
+        webhookUrl!,
+        "\u26a0\ufe0f LinkedIn connection sync failed \u2014 your `li_at` cookie has likely expired. Grab a fresh one from your browser and update the `LINKEDIN_LI_AT` environment variable.",
       );
     } else {
       console.error("Poll failed:", msg);
     }
-    process.exit(1);
+    return;
   }
 
   const newConnections = filterNewConnections(all);
@@ -53,13 +58,44 @@ async function main(): Promise<void> {
   }
 
   console.log(`${newConnections.length} new connection(s) detected`);
-  await withRetry(() => sendSlackMessage(webhookUrl, newConnections), {
+  await withRetry(() => sendSlackMessage(webhookUrl!, newConnections), {
     label: "Slack send",
   });
   markAsSeen(newConnections);
 }
 
-main().catch((err) => {
-  console.error("Failed:", err);
-  process.exit(1);
+async function weeklyRecap(): Promise<void> {
+  console.log(`[${new Date().toISOString()}] Sending weekly recap...`);
+
+  const since = Date.now() - SEVEN_DAYS_MS;
+  const connections = getConnectionsSince(since);
+
+  console.log(`Recap: ${connections.length} connection(s) in the last 7 days`);
+  await sendRecapMessage(webhookUrl!, connections);
+  console.log("Recap sent to Slack");
+}
+
+// --- Scheduling ---
+
+// Check for new connections every 30 minutes
+cron.schedule("*/30 * * * *", () => {
+  checkConnections().catch((err) =>
+    console.error(`[${new Date().toISOString()}] Connection check error:`, err),
+  );
 });
+
+// Weekly recap every Monday at 6:00 AM UTC
+cron.schedule("0 6 * * 1", () => {
+  weeklyRecap().catch((err) =>
+    console.error(`[${new Date().toISOString()}] Weekly recap error:`, err),
+  );
+});
+
+// Run an initial check on startup
+console.log("LinkedIn Connections notifier started");
+console.log("  - Connection check: every 30 minutes");
+console.log("  - Weekly recap: Mondays at 06:00 UTC");
+
+checkConnections().catch((err) =>
+  console.error(`[${new Date().toISOString()}] Initial check error:`, err),
+);
