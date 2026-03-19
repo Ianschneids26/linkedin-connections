@@ -87,36 +87,9 @@ export async function fetchRecentConnections(
   liAtCookie: string,
   count = 40,
 ): Promise<LinkedInConnection[]> {
-  // Get a JSESSIONID/CSRF token by hitting LinkedIn
-  const feedResp = await fetch("https://www.linkedin.com/feed/", {
-    headers: {
-      "cookie": `li_at=${liAtCookie}`,
-      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    },
-    redirect: "manual",
-  });
-
-  // Extract JSESSIONID from set-cookie headers
-  const setCookies = feedResp.headers.getSetCookie?.() ?? [];
-  let csrfToken = "";
-  for (const sc of setCookies) {
-    const match = sc.match(/JSESSIONID="?([^";]+)"?/);
-    if (match) {
-      csrfToken = match[1];
-      break;
-    }
-  }
-
-  if (!csrfToken) {
-    // Check if we got redirected (auth failure)
-    const location = feedResp.headers.get("location") ?? "";
-    if (location.includes("/login") || location.includes("/checkpoint") || location.includes("/authwall")) {
-      throw new Error(`LinkedIn auth redirect to ${location} — li_at cookie may be invalid`);
-    }
-    throw new Error("No JSESSIONID cookie returned by LinkedIn");
-  }
-
-  console.log(`[DEBUG] JSESSIONID obtained, length: ${csrfToken.length}`);
+  // Generate our own CSRF token — LinkedIn just requires the cookie and header to match
+  const csrfToken = `ajax:${Date.now()}`;
+  console.log(`[DEBUG] Using self-generated CSRF token`);
 
   // Try decoration IDs from newest to oldest
   const decorationIds = [
