@@ -7,6 +7,7 @@ import { sendSlackMessage, sendSlackText, sendRecapMessage, type ConnectionWithD
 import { generateOutreachDM } from "./outreach.js";
 import { withRetry } from "./retry.js";
 import { startInteractionServer } from "./interactions.js";
+import { isFlaggedInHiringChannel } from "./hiring-match.js";
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -66,11 +67,16 @@ async function checkConnections(): Promise<void> {
   const connectionsWithDMs: ConnectionWithDM[] = await Promise.all(
     newConnections.map(async (c) => {
       let suggestedDM = "";
-      try {
-        suggestedDM = await generateOutreachDM(c);
-        console.log(`Generated DM for ${c.firstName} ${c.lastName}`);
-      } catch (err: any) {
-        console.error(`Failed to generate DM for ${c.firstName} ${c.lastName}:`, err?.message);
+      const flagged = await isFlaggedInHiringChannel(c.firstName, c.lastName, c.profileUrl);
+      if (flagged) {
+        try {
+          suggestedDM = await generateOutreachDM(c);
+          console.log(`Generated DM for ${c.firstName} ${c.lastName} (flagged in hiring channel)`);
+        } catch (err: any) {
+          console.error(`Failed to generate DM for ${c.firstName} ${c.lastName}:`, err?.message);
+        }
+      } else {
+        console.log(`${c.firstName} ${c.lastName} — not flagged, skipping DM`);
       }
       return { ...c, suggestedDM };
     }),

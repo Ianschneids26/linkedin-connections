@@ -45,25 +45,31 @@ function connectionBlocks(c: ConnectionWithDM): object[] {
         text: `*Person:* ${personText}\n*Title:* ${title}\n*Company:* ${company}`,
       },
     },
-    {
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: `*suggested dm:*\n>${dmText}`,
-      },
-    },
-    {
-      type: "actions",
-      elements: [
-        {
-          type: "button",
-          text: { type: "plain_text", text: "DM on LinkedIn", emoji: true },
-          style: "primary",
-          url: c.profileUrl || "https://www.linkedin.com",
-        },
-      ],
-    },
   ];
+
+  if (c.suggestedDM) {
+    blocks.push(
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*suggested dm:*\n>${dmText}`,
+        },
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: { type: "plain_text", text: "DM on LinkedIn", emoji: true },
+            style: "primary",
+            url: c.profileUrl || "https://www.linkedin.com",
+            action_id: `dm_${safeId}`,
+          },
+        ],
+      },
+    );
+  }
 
   return blocks;
 }
