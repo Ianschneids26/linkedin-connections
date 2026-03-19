@@ -25,10 +25,15 @@ export async function sendSlackText(
   await postToSlack(webhookUrl, { text });
 }
 
+function sanitizeId(id: string): string {
+  return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 100);
+}
+
 function connectionBlocks(c: ConnectionWithDM): object[] {
   const name = `${c.firstName} ${c.lastName}`.trim();
   const title = c.headline || "No title";
   const company = c.company || "\u2014";
+  const safeId = sanitizeId(c.id);
 
   const infoText = `*Person:* <${c.profileUrl}|${name}>\n*Title:* ${title}\n*Company:* ${company}`;
 
@@ -64,20 +69,20 @@ function connectionBlocks(c: ConnectionWithDM): object[] {
         type: "button",
         text: { type: "plain_text", text: "accept", emoji: true },
         style: "primary",
-        action_id: `accept_${c.id}`,
+        action_id: `accept_${safeId}`,
         value: c.suggestedDM,
       },
       {
         type: "button",
         text: { type: "plain_text", text: "edit", emoji: true },
-        action_id: `edit_${c.id}`,
+        action_id: `edit_${safeId}`,
         value: c.suggestedDM,
       },
       {
         type: "button",
         text: { type: "plain_text", text: "reject", emoji: true },
         style: "danger",
-        action_id: `reject_${c.id}`,
+        action_id: `reject_${safeId}`,
       },
     ],
   });
@@ -91,21 +96,18 @@ export async function sendSlackMessage(
 ): Promise<void> {
   const headerText = `${connections.length} new LinkedIn connection${connections.length === 1 ? "" : "s"} today`;
 
-  const blocks: object[] = [
-    {
-      type: "header",
-      text: { type: "plain_text", text: headerText, emoji: true },
-    },
-  ];
+  // Send one message per connection to avoid Slack's 50 block limit
+  for (const connection of connections) {
+    const blocks: object[] = [
+      {
+        type: "header",
+        text: { type: "plain_text", text: headerText, emoji: true },
+      },
+      ...connectionBlocks(connection),
+    ];
 
-  for (let i = 0; i < connections.length; i++) {
-    if (i > 0) {
-      blocks.push({ type: "divider" });
-    }
-    blocks.push(...connectionBlocks(connections[i]));
+    await postToSlack(webhookUrl, { blocks, text: headerText });
   }
-
-  await postToSlack(webhookUrl, { blocks, text: headerText });
 }
 
 export async function sendRecapMessage(
