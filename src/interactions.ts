@@ -41,7 +41,7 @@ async function handleBlockAction(payload: any): Promise<void> {
     const dmText = action.value;
     const profileUrl = extractProfileUrl(payload);
     const messagingUrl = profileUrl
-      ? profileUrl.replace(/\/?$/, "") + "/overlay/compose-message/"
+      ? profileUrl.replace(/\/?$/, "") + "/"
       : "";
 
     await updateMessage(responseUrl, {
@@ -146,7 +146,7 @@ async function handleViewSubmission(payload: any): Promise<void> {
   );
 
   const messagingUrl = profileUrl
-    ? profileUrl.replace(/\/?$/, "") + "/overlay/compose-message/"
+    ? profileUrl.replace(/\/?$/, "") + "/"
     : "";
 
   await updateMessage(responseUrl, {
