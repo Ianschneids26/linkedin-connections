@@ -57,22 +57,9 @@ function connectionBlocks(c: ConnectionWithDM): object[] {
       elements: [
         {
           type: "button",
-          text: { type: "plain_text", text: "accept", emoji: true },
+          text: { type: "plain_text", text: "DM on LinkedIn", emoji: true },
           style: "primary",
-          action_id: `accept_${safeId}`,
-          value: dmText.slice(0, 2000),
-        },
-        {
-          type: "button",
-          text: { type: "plain_text", text: "edit", emoji: true },
-          action_id: `edit_${safeId}`,
-          value: dmText.slice(0, 2000),
-        },
-        {
-          type: "button",
-          text: { type: "plain_text", text: "reject", emoji: true },
-          style: "danger",
-          action_id: `reject_${safeId}`,
+          url: c.profileUrl || "https://www.linkedin.com",
         },
       ],
     },
