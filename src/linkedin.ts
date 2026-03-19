@@ -28,9 +28,14 @@ async function voyagerFetch(
         "accept": "application/vnd.linkedin.normalized+json+2.1",
         "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
+      redirect: "manual",
     });
     const status = resp.status;
-    console.log(`[DEBUG] Voyager response: status=${status}, url=${url.slice(0, 80)}`);
+    const location = resp.headers.get("location") ?? "";
+    console.log(`[DEBUG] Voyager response: status=${status}, location=${location}, url=${url.slice(0, 80)}`);
+    if (status >= 300 && status < 400) {
+      throw new Error(`LinkedIn API redirected to ${location} — li_at cookie may be invalid`);
+    }
     let data = null;
     try {
       data = await resp.json();
