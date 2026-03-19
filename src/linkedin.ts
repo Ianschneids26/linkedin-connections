@@ -20,24 +20,28 @@ async function voyagerFetch(
   csrfToken: string,
 ): Promise<{ status: number; data: any }> {
   return page.evaluate(async ({ url, csrfToken }) => {
-    const resp = await fetch(url, {
-      headers: {
-        "csrf-token": csrfToken,
-        "x-li-lang": "en_US",
-        "x-li-track": JSON.stringify({ clientVersion: "1.13.8677", osName: "web" }),
-        "x-restli-protocol-version": "2.0.0",
-        "accept": "application/vnd.linkedin.normalized+json+2.1",
-      },
-      credentials: "include",
-    });
-    const status = resp.status;
-    let data = null;
     try {
-      data = await resp.json();
-    } catch {
-      // Not JSON
+      const resp = await fetch(url, {
+        headers: {
+          "csrf-token": csrfToken,
+          "x-li-lang": "en_US",
+          "x-li-track": JSON.stringify({ clientVersion: "1.13.8677", osName: "web" }),
+          "x-restli-protocol-version": "2.0.0",
+          "accept": "application/vnd.linkedin.normalized+json+2.1",
+        },
+        credentials: "include",
+      });
+      const status = resp.status;
+      let data = null;
+      try {
+        data = await resp.json();
+      } catch {
+        // Not JSON
+      }
+      return { status, data };
+    } catch (err: any) {
+      return { status: 0, data: { error: err?.message, currentUrl: String((globalThis as any).location?.href ?? "unknown") } };
     }
-    return { status, data };
   }, { url, csrfToken });
 }
 
@@ -115,7 +119,9 @@ export async function fetchRecentConnections(
     await page.goto("https://www.linkedin.com/feed/", { waitUntil: "domcontentloaded", timeout: 30_000 });
 
     const currentUrl = page.url();
-    if (currentUrl.includes("/login") || currentUrl.includes("/checkpoint")) {
+    console.log(`[DEBUG] After navigation, current URL: ${currentUrl}`);
+    console.log(`[DEBUG] Page title: ${await page.title()}`);
+    if (currentUrl.includes("/login") || currentUrl.includes("/checkpoint") || currentUrl.includes("/authwall")) {
       throw new Error(`LinkedIn auth redirect to ${currentUrl} — li_at cookie may be invalid`);
     }
 
@@ -123,6 +129,7 @@ export async function fetchRecentConnections(
     const cookies = await context.cookies();
     const jsessionCookie = cookies.find(c => c.name === "JSESSIONID");
     const csrfToken = (jsessionCookie?.value ?? "").replace(/"/g, "");
+    console.log(`[DEBUG] JSESSIONID found: ${!!csrfToken}, length: ${csrfToken.length}`);
 
     if (!csrfToken) {
       throw new Error("No JSESSIONID cookie found — cannot make API calls");
@@ -154,6 +161,8 @@ export async function fetchRecentConnections(
       if (status === 401 || status === 403) {
         throw new Error(`LinkedIn API auth error ${status} — li_at cookie may be invalid`);
       }
+
+      console.log(`[DEBUG] Decoration ${decorationId}: status=${status}, hasData=${!!data?.included?.length}, error=${data?.error ?? "none"}, currentUrl=${data?.currentUrl ?? "n/a"}`);
 
       if (status === 200 && data?.included?.length > 0) {
         return parseConnections(data);
