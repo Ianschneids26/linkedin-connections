@@ -1,6 +1,10 @@
 import type { LinkedInConnection } from "./linkedin.js";
 import type { StoredConnection } from "./store.js";
 
+export interface ConnectionWithDM extends LinkedInConnection {
+  suggestedDM: string;
+}
+
 async function postToSlack(webhookUrl: string, payload: object): Promise<void> {
   const res = await fetch(webhookUrl, {
     method: "POST",
@@ -21,23 +25,16 @@ export async function sendSlackText(
   await postToSlack(webhookUrl, { text });
 }
 
-function connectionBlock(c: {
-  firstName: string;
-  lastName: string;
-  headline: string;
-  company: string;
-  profileUrl: string;
-  profileImageUrl?: string;
-}): object[] {
+function connectionBlocks(c: ConnectionWithDM): object[] {
   const name = `${c.firstName} ${c.lastName}`.trim();
   const title = c.headline || "No title";
   const company = c.company || "\u2014";
 
-  const text = `*Person:* <${c.profileUrl}|${name}>\n*Title:* ${title}\n*Company:* ${company}`;
+  const infoText = `*Person:* <${c.profileUrl}|${name}>\n*Title:* ${title}\n*Company:* ${company}`;
 
   const section: any = {
     type: "section",
-    text: { type: "mrkdwn", text },
+    text: { type: "mrkdwn", text: infoText },
   };
 
   if (c.profileImageUrl) {
@@ -48,12 +45,41 @@ function connectionBlock(c: {
     };
   }
 
-  return [section];
+  const blocks: object[] = [section];
+
+  if (c.suggestedDM) {
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `*suggested dm:*\n>${c.suggestedDM}`,
+      },
+    });
+  }
+
+  blocks.push({
+    type: "actions",
+    elements: [
+      {
+        type: "button",
+        text: { type: "plain_text", text: "open linkedin", emoji: true },
+        style: "primary",
+        url: c.profileUrl,
+      },
+      {
+        type: "button",
+        text: { type: "plain_text", text: "skip", emoji: true },
+        action_id: `skip_${c.id}`,
+      },
+    ],
+  });
+
+  return blocks;
 }
 
 export async function sendSlackMessage(
   webhookUrl: string,
-  connections: LinkedInConnection[],
+  connections: ConnectionWithDM[],
 ): Promise<void> {
   const headerText = `${connections.length} new LinkedIn connection${connections.length === 1 ? "" : "s"} today`;
 
@@ -68,7 +94,7 @@ export async function sendSlackMessage(
     if (i > 0) {
       blocks.push({ type: "divider" });
     }
-    blocks.push(...connectionBlock(connections[i]));
+    blocks.push(...connectionBlocks(connections[i]));
   }
 
   await postToSlack(webhookUrl, { blocks, text: headerText });
@@ -98,7 +124,22 @@ export async function sendRecapMessage(
     if (i > 0) {
       blocks.push({ type: "divider" });
     }
-    blocks.push(...connectionBlock(connections[i]));
+    const name = `${connections[i].firstName} ${connections[i].lastName}`.trim();
+    const title = connections[i].headline || "No title";
+    const company = connections[i].company || "\u2014";
+    const infoText = `*Person:* <${connections[i].profileUrl}|${name}>\n*Title:* ${title}\n*Company:* ${company}`;
+    const section: any = {
+      type: "section",
+      text: { type: "mrkdwn", text: infoText },
+    };
+    if (connections[i].profileImageUrl) {
+      section.accessory = {
+        type: "image",
+        image_url: connections[i].profileImageUrl,
+        alt_text: name,
+      };
+    }
+    blocks.push(section);
   }
 
   await postToSlack(webhookUrl, { blocks, text: headerText });

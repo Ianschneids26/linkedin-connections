@@ -3,7 +3,8 @@ import cron from "node-cron";
 import { config, pollingCron, recapCron } from "./config.js";
 import { fetchRecentConnections } from "./linkedin.js";
 import { filterNewConnections, markAsSeen, getConnectionsSince } from "./store.js";
-import { sendSlackMessage, sendSlackText, sendRecapMessage } from "./slack.js";
+import { sendSlackMessage, sendSlackText, sendRecapMessage, type ConnectionWithDM } from "./slack.js";
+import { generateOutreachDM } from "./outreach.js";
 import { withRetry } from "./retry.js";
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
@@ -60,7 +61,21 @@ async function checkConnections(): Promise<void> {
   }
 
   console.log(`${newConnections.length} new connection(s) detected`);
-  await withRetry(() => sendSlackMessage(webhookUrl!, newConnections), {
+
+  const connectionsWithDMs: ConnectionWithDM[] = await Promise.all(
+    newConnections.map(async (c) => {
+      let suggestedDM = "";
+      try {
+        suggestedDM = await generateOutreachDM(c);
+        console.log(`Generated DM for ${c.firstName} ${c.lastName}`);
+      } catch (err: any) {
+        console.error(`Failed to generate DM for ${c.firstName} ${c.lastName}:`, err?.message);
+      }
+      return { ...c, suggestedDM };
+    }),
+  );
+
+  await withRetry(() => sendSlackMessage(webhookUrl!, connectionsWithDMs), {
     label: "Slack send",
   });
   markAsSeen(newConnections);
