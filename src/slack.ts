@@ -6,10 +6,12 @@ export interface ConnectionWithDM extends LinkedInConnection {
 }
 
 async function postToSlack(webhookUrl: string, payload: object): Promise<void> {
+  const jsonBody = JSON.stringify(payload);
+  console.log(`[DEBUG] Slack payload (first 2000 chars): ${jsonBody.slice(0, 2000)}`);
   const res = await fetch(webhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: jsonBody,
   });
 
   if (!res.ok) {
