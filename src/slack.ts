@@ -37,14 +37,15 @@ function connectionBlocks(c: ConnectionWithDM): object[] {
   const company = c.company || "\u2014";
   const safeId = sanitizeId(c.id);
 
-  const infoText = `*Person:* <${c.profileUrl}|${name}>\n*Title:* ${title}\n*Company:* ${company}`;
+  const personText = c.profileUrl ? `<${c.profileUrl}|${name}>` : name;
+  const infoText = `*Person:* ${personText}\n*Title:* ${title}\n*Company:* ${company}`;
 
   const section: any = {
     type: "section",
     text: { type: "mrkdwn", text: infoText },
   };
 
-  if (c.profileImageUrl) {
+  if (c.profileImageUrl && c.profileImageUrl.startsWith("https://")) {
     section.accessory = {
       type: "image",
       image_url: c.profileImageUrl,
@@ -54,12 +55,14 @@ function connectionBlocks(c: ConnectionWithDM): object[] {
 
   const blocks: object[] = [section];
 
-  if (c.suggestedDM) {
+  const dmText = (c.suggestedDM || "").replace(/[\n\r]+/g, " ").trim();
+
+  if (dmText) {
     blocks.push({
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*suggested dm:*\n>${c.suggestedDM}`,
+        text: `*suggested dm:*\n>${dmText}`,
       },
     });
   }
@@ -72,13 +75,13 @@ function connectionBlocks(c: ConnectionWithDM): object[] {
         text: { type: "plain_text", text: "accept", emoji: true },
         style: "primary",
         action_id: `accept_${safeId}`,
-        value: c.suggestedDM,
+        value: dmText || "no dm generated",
       },
       {
         type: "button",
         text: { type: "plain_text", text: "edit", emoji: true },
         action_id: `edit_${safeId}`,
-        value: c.suggestedDM,
+        value: dmText || "no dm generated",
       },
       {
         type: "button",
