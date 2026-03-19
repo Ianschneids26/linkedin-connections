@@ -18,24 +18,31 @@ async function voyagerFetch(
   csrfToken: string,
 ): Promise<{ status: number; data: any }> {
   try {
-    const resp = await fetch(url, {
-      headers: {
-        "csrf-token": csrfToken,
-        "cookie": `li_at=${liAtCookie}; JSESSIONID="${csrfToken}"`,
-        "x-li-lang": "en_US",
-        "x-li-track": JSON.stringify({ clientVersion: "1.13.8677", osName: "web" }),
-        "x-restli-protocol-version": "2.0.0",
-        "accept": "application/vnd.linkedin.normalized+json+2.1",
-        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      },
-      redirect: "manual",
-    });
-    const status = resp.status;
-    const location = resp.headers.get("location") ?? "";
-    console.log(`[DEBUG] Voyager response: status=${status}, location=${location}, url=${url.slice(0, 80)}`);
-    if (status >= 300 && status < 400) {
-      throw new Error(`LinkedIn API redirected to ${location} — li_at cookie may be invalid`);
+    const headers = {
+      "csrf-token": csrfToken,
+      "cookie": `li_at=${liAtCookie}; JSESSIONID="${csrfToken}"`,
+      "x-li-lang": "en_US",
+      "x-li-track": JSON.stringify({ clientVersion: "1.13.8677", osName: "web" }),
+      "x-restli-protocol-version": "2.0.0",
+      "accept": "application/vnd.linkedin.normalized+json+2.1",
+      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    };
+
+    let resp = await fetch(url, { headers, redirect: "manual" });
+
+    // Follow up to 3 redirects manually (preserving cookies)
+    for (let i = 0; i < 3 && resp.status >= 300 && resp.status < 400; i++) {
+      const location = resp.headers.get("location");
+      if (!location) break;
+      const redirectUrl = location.startsWith("http") ? location : `https://www.linkedin.com${location}`;
+      console.log(`[DEBUG] Following redirect ${i + 1} to ${redirectUrl.slice(0, 100)}`);
+      if (redirectUrl.includes("/login") || redirectUrl.includes("/authwall")) {
+        throw new Error(`LinkedIn auth redirect — li_at cookie may be invalid`);
+      }
+      resp = await fetch(redirectUrl, { headers, redirect: "manual" });
     }
+
+    const status = resp.status;
     let data = null;
     try {
       data = await resp.json();
