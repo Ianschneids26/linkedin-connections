@@ -17,25 +17,31 @@ async function voyagerFetch(
   liAtCookie: string,
   csrfToken: string,
 ): Promise<{ status: number; data: any }> {
-  const resp = await fetch(url, {
-    headers: {
-      "csrf-token": csrfToken,
-      "cookie": `li_at=${liAtCookie}; JSESSIONID="${csrfToken}"`,
-      "x-li-lang": "en_US",
-      "x-li-track": JSON.stringify({ clientVersion: "1.13.8677", osName: "web" }),
-      "x-restli-protocol-version": "2.0.0",
-      "accept": "application/vnd.linkedin.normalized+json+2.1",
-      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    },
-  });
-  const status = resp.status;
-  let data = null;
   try {
-    data = await resp.json();
-  } catch {
-    // Not JSON
+    const resp = await fetch(url, {
+      headers: {
+        "csrf-token": csrfToken,
+        "cookie": `li_at=${liAtCookie}; JSESSIONID="${csrfToken}"`,
+        "x-li-lang": "en_US",
+        "x-li-track": JSON.stringify({ clientVersion: "1.13.8677", osName: "web" }),
+        "x-restli-protocol-version": "2.0.0",
+        "accept": "application/vnd.linkedin.normalized+json+2.1",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+    });
+    const status = resp.status;
+    console.log(`[DEBUG] Voyager response: status=${status}, url=${url.slice(0, 80)}`);
+    let data = null;
+    try {
+      data = await resp.json();
+    } catch {
+      // Not JSON
+    }
+    return { status, data };
+  } catch (err: any) {
+    console.error(`[DEBUG] Voyager fetch error: ${err?.message}, cause: ${err?.cause?.message ?? "none"}`);
+    throw err;
   }
-  return { status, data };
 }
 
 function parseConnections(data: any): LinkedInConnection[] {
