@@ -62,14 +62,22 @@ function connectionBlocks(c: ConnectionWithDM): object[] {
     elements: [
       {
         type: "button",
-        text: { type: "plain_text", text: "open linkedin", emoji: true },
+        text: { type: "plain_text", text: "accept", emoji: true },
         style: "primary",
-        url: c.profileUrl,
+        action_id: `accept_${c.id}`,
+        value: c.suggestedDM,
       },
       {
         type: "button",
-        text: { type: "plain_text", text: "skip", emoji: true },
-        action_id: `skip_${c.id}`,
+        text: { type: "plain_text", text: "edit", emoji: true },
+        action_id: `edit_${c.id}`,
+        value: c.suggestedDM,
+      },
+      {
+        type: "button",
+        text: { type: "plain_text", text: "reject", emoji: true },
+        style: "danger",
+        action_id: `reject_${c.id}`,
       },
     ],
   });

@@ -16,7 +16,7 @@ export async function generateOutreachDM(
         role: "user",
         content: `Generate a LinkedIn DM using this exact structure:
 
-"heyo just saw ur post on [reference what they posted about in 3-5 words]. so wanted to drop u a note. we work with superhuman and a ton of other [category e.g. saas / cpg / fintech] companies on product design. down for a quick chat later this week or next?"
+"hey just saw ur post on [reference what they posted about in 3-5 words]. so wanted to drop u a note. we work with superhuman and a ton of other [category e.g. saas / cpg / fintech] companies on product design. down for a quick chat later this week or next?"
 
 Rules:
 - All lowercase, no exceptions
@@ -24,7 +24,7 @@ Rules:
 - Periods only
 - Under 200 characters
 - Never change the structure, only fill in the brackets
-- Keep heyo, ur, u exactly as written
+- Keep hey, ur, u exactly as written
 
 Person name: ${name}
 Headline: ${connection.headline}

@@ -6,6 +6,7 @@ import { filterNewConnections, markAsSeen, getConnectionsSince } from "./store.j
 import { sendSlackMessage, sendSlackText, sendRecapMessage, type ConnectionWithDM } from "./slack.js";
 import { generateOutreachDM } from "./outreach.js";
 import { withRetry } from "./retry.js";
+import { startInteractionServer } from "./interactions.js";
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -111,6 +112,7 @@ if (config.weekly_recap_enabled) {
 }
 
 // Startup
+startInteractionServer(Number(process.env.PORT) || 3000);
 console.log(`LinkedIn Connections notifier started for ${config.client_name}`);
 console.log(`  - Connection check: every ${config.polling_interval_minutes} minutes`);
 if (config.weekly_recap_enabled) {
