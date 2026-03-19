@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/playwright:v1.58.2-noble
+FROM node:20-slim
 
 WORKDIR /app
 

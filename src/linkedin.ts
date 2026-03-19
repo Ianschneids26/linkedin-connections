@@ -1,5 +1,3 @@
-import { chromium, type Page } from "playwright";
-
 export interface LinkedInConnection {
   id: string;
   firstName: string;
@@ -15,34 +13,29 @@ const VOYAGER_BASE = "https://www.linkedin.com/voyager/api";
 const CONNECTIONS_ENDPOINT = `${VOYAGER_BASE}/relationships/dash/connections`;
 
 async function voyagerFetch(
-  page: Page,
   url: string,
+  liAtCookie: string,
   csrfToken: string,
 ): Promise<{ status: number; data: any }> {
-  return page.evaluate(async ({ url, csrfToken }) => {
-    try {
-      const resp = await fetch(url, {
-        headers: {
-          "csrf-token": csrfToken,
-          "x-li-lang": "en_US",
-          "x-li-track": JSON.stringify({ clientVersion: "1.13.8677", osName: "web" }),
-          "x-restli-protocol-version": "2.0.0",
-          "accept": "application/vnd.linkedin.normalized+json+2.1",
-        },
-        credentials: "include",
-      });
-      const status = resp.status;
-      let data = null;
-      try {
-        data = await resp.json();
-      } catch {
-        // Not JSON
-      }
-      return { status, data };
-    } catch (err: any) {
-      return { status: 0, data: { error: err?.message, currentUrl: String((globalThis as any).location?.href ?? "unknown") } };
-    }
-  }, { url, csrfToken });
+  const resp = await fetch(url, {
+    headers: {
+      "csrf-token": csrfToken,
+      "cookie": `li_at=${liAtCookie}; JSESSIONID="${csrfToken}"`,
+      "x-li-lang": "en_US",
+      "x-li-track": JSON.stringify({ clientVersion: "1.13.8677", osName: "web" }),
+      "x-restli-protocol-version": "2.0.0",
+      "accept": "application/vnd.linkedin.normalized+json+2.1",
+      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    },
+  });
+  const status = resp.status;
+  let data = null;
+  try {
+    data = await resp.json();
+  } catch {
+    // Not JSON
+  }
+  return { status, data };
 }
 
 function parseConnections(data: any): LinkedInConnection[] {
@@ -94,83 +87,48 @@ export async function fetchRecentConnections(
   liAtCookie: string,
   count = 40,
 ): Promise<LinkedInConnection[]> {
-  const browser = await chromium.launch({ headless: true });
-  try {
-    const context = await browser.newContext();
-    const page = await context.newPage();
+  // Get a JSESSIONID/CSRF token by hitting LinkedIn
+  const feedResp = await fetch("https://www.linkedin.com/feed/", {
+    headers: {
+      "cookie": `li_at=${liAtCookie}`,
+      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    },
+    redirect: "manual",
+  });
 
-    // Navigate to LinkedIn login page (public) to establish session cookies
-    await page.goto("https://www.linkedin.com/login", { waitUntil: "domcontentloaded", timeout: 30_000 });
-
-    // Inject li_at auth cookie
-    await context.addCookies([
-      {
-        name: "li_at",
-        value: liAtCookie,
-        domain: ".linkedin.com",
-        path: "/",
-        httpOnly: true,
-        secure: true,
-        sameSite: "None",
-      },
-    ]);
-
-    // Navigate to an authenticated page to confirm session and get CSRF token
-    await page.goto("https://www.linkedin.com/feed/", { waitUntil: "domcontentloaded", timeout: 30_000 });
-
-    const currentUrl = page.url();
-    console.log(`[DEBUG] After navigation, current URL: ${currentUrl}`);
-    console.log(`[DEBUG] Page title: ${await page.title()}`);
-    if (currentUrl.includes("/login") || currentUrl.includes("/checkpoint") || currentUrl.includes("/authwall")) {
-      throw new Error(`LinkedIn auth redirect to ${currentUrl} — li_at cookie may be invalid`);
+  // Extract JSESSIONID from set-cookie headers
+  const setCookies = feedResp.headers.getSetCookie?.() ?? [];
+  let csrfToken = "";
+  for (const sc of setCookies) {
+    const match = sc.match(/JSESSIONID="?([^";]+)"?/);
+    if (match) {
+      csrfToken = match[1];
+      break;
     }
+  }
 
-    // Get the JSESSIONID that LinkedIn set (used as CSRF token)
-    const cookies = await context.cookies();
-    const jsessionCookie = cookies.find(c => c.name === "JSESSIONID");
-    const csrfToken = (jsessionCookie?.value ?? "").replace(/"/g, "");
-    console.log(`[DEBUG] JSESSIONID found: ${!!csrfToken}, length: ${csrfToken.length}`);
-
-    if (!csrfToken) {
-      throw new Error("No JSESSIONID cookie found — cannot make API calls");
+  if (!csrfToken) {
+    // Check if we got redirected (auth failure)
+    const location = feedResp.headers.get("location") ?? "";
+    if (location.includes("/login") || location.includes("/checkpoint") || location.includes("/authwall")) {
+      throw new Error(`LinkedIn auth redirect to ${location} — li_at cookie may be invalid`);
     }
+    throw new Error("No JSESSIONID cookie returned by LinkedIn");
+  }
 
-    // Try decoration IDs from newest to oldest
-    const decorationIds = [
-      "com.linkedin.voyager.dash.deco.web.mynetwork.ConnectionListWithProfile-5",
-      "com.linkedin.voyager.dash.deco.web.mynetwork.ConnectionListWithProfile-4",
-      "com.linkedin.voyager.dash.deco.web.mynetwork.ConnectionListWithProfile-3",
-      "com.linkedin.voyager.dash.deco.web.mynetwork.ConnectionListWithProfile-2",
-    ];
+  console.log(`[DEBUG] JSESSIONID obtained, length: ${csrfToken.length}`);
 
-    for (const decorationId of decorationIds) {
-      const params = new URLSearchParams({
-        decorationId,
-        count: String(count),
-        q: "search",
-        sortType: "RECENTLY_ADDED",
-        start: "0",
-      });
+  // Try decoration IDs from newest to oldest
+  const decorationIds = [
+    "com.linkedin.voyager.dash.deco.web.mynetwork.ConnectionListWithProfile-5",
+    "com.linkedin.voyager.dash.deco.web.mynetwork.ConnectionListWithProfile-4",
+    "com.linkedin.voyager.dash.deco.web.mynetwork.ConnectionListWithProfile-3",
+    "com.linkedin.voyager.dash.deco.web.mynetwork.ConnectionListWithProfile-2",
+  ];
 
-      const { status, data } = await voyagerFetch(
-        page,
-        `${CONNECTIONS_ENDPOINT}?${params}`,
-        csrfToken,
-      );
-
-      if (status === 401 || status === 403) {
-        throw new Error(`LinkedIn API auth error ${status} — li_at cookie may be invalid`);
-      }
-
-      console.log(`[DEBUG] Decoration ${decorationId}: status=${status}, hasData=${!!data?.included?.length}, error=${data?.error ?? "none"}, currentUrl=${data?.currentUrl ?? "n/a"}`);
-
-      if (status === 200 && data?.included?.length > 0) {
-        return parseConnections(data);
-      }
-    }
-
-    // Fallback: try without decorationId
+  for (const decorationId of decorationIds) {
     const params = new URLSearchParams({
+      decorationId,
       count: String(count),
       q: "search",
       sortType: "RECENTLY_ADDED",
@@ -178,8 +136,8 @@ export async function fetchRecentConnections(
     });
 
     const { status, data } = await voyagerFetch(
-      page,
       `${CONNECTIONS_ENDPOINT}?${params}`,
+      liAtCookie,
       csrfToken,
     );
 
@@ -187,14 +145,36 @@ export async function fetchRecentConnections(
       throw new Error(`LinkedIn API auth error ${status} — li_at cookie may be invalid`);
     }
 
-    if (status !== 200) {
-      throw new Error(`LinkedIn Voyager API error ${status}: ${JSON.stringify(data)?.slice(0, 500)}`);
-    }
+    console.log(`[DEBUG] Decoration ${decorationId}: status=${status}, hasData=${!!data?.included?.length}`);
 
-    return parseConnections(data);
-  } finally {
-    await browser.close();
+    if (status === 200 && data?.included?.length > 0) {
+      return parseConnections(data);
+    }
   }
+
+  // Fallback: try without decorationId
+  const params = new URLSearchParams({
+    count: String(count),
+    q: "search",
+    sortType: "RECENTLY_ADDED",
+    start: "0",
+  });
+
+  const { status, data } = await voyagerFetch(
+    `${CONNECTIONS_ENDPOINT}?${params}`,
+    liAtCookie,
+    csrfToken,
+  );
+
+  if (status === 401 || status === 403) {
+    throw new Error(`LinkedIn API auth error ${status} — li_at cookie may be invalid`);
+  }
+
+  if (status !== 200) {
+    throw new Error(`LinkedIn Voyager API error ${status}: ${JSON.stringify(data)?.slice(0, 500)}`);
+  }
+
+  return parseConnections(data);
 }
 
 function extractProfileImage(profile: any): string {
