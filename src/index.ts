@@ -8,34 +8,32 @@ import { generateOutreachDM } from "./outreach.js";
 import { withRetry } from "./retry.js";
 import { startInteractionServer } from "./interactions.js";
 import { isFlaggedInHiringChannel } from "./hiring-match.js";
+import { getActiveClients, type Client } from "./db.js";
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
-const liAt = process.env.LINKEDIN_LI_AT;
-const webhookUrl = process.env.SLACK_WEBHOOK_URL;
+// Legacy single-tenant env vars (still supported as fallback)
+const legacyLiAt = process.env.LINKEDIN_LI_AT;
+const legacyWebhookUrl = process.env.SLACK_WEBHOOK_URL;
 
-if (!liAt) {
-  console.error("Missing LINKEDIN_LI_AT environment variable");
-  process.exit(1);
-}
-if (!webhookUrl) {
-  console.error("Missing SLACK_WEBHOOK_URL environment variable");
-  process.exit(1);
-}
-
-async function checkConnections(): Promise<void> {
-  console.log(`[${new Date().toISOString()}] Checking for new connections...`);
+async function checkConnectionsForClient(
+  clientLabel: string,
+  liAt: string,
+  webhookUrl: string,
+  clientId?: number,
+): Promise<void> {
+  console.log(`[${new Date().toISOString()}] [${clientLabel}] Checking for new connections...`);
 
   let all;
   try {
     all = await withRetry(
-      () => fetchRecentConnections(liAt!, config.max_connections_to_fetch),
-      { label: "LinkedIn fetch" },
+      () => fetchRecentConnections(liAt, config.max_connections_to_fetch),
+      { label: `LinkedIn fetch (${clientLabel})` },
     );
   } catch (err: any) {
     const msg = err?.message ?? String(err);
     if (msg.includes("rate limited")) {
-      console.error("Rate limited, will retry next cycle:", msg);
+      console.error(`[${clientLabel}] Rate limited, will retry next cycle:`, msg);
       return;
     }
     if (
@@ -44,25 +42,25 @@ async function checkConnections(): Promise<void> {
       msg.includes("auth redirect") ||
       msg.includes("JSESSIONID")
     ) {
-      console.error("LinkedIn auth failed:", msg);
+      console.error(`[${clientLabel}] LinkedIn auth failed:`, msg);
       await sendSlackText(
-        webhookUrl!,
-        "\u26a0\ufe0f LinkedIn connection sync failed \u2014 your `li_at` cookie has likely expired. Grab a fresh one from your browser and update the `LINKEDIN_LI_AT` environment variable.",
+        webhookUrl,
+        `\u26a0\ufe0f LinkedIn connection sync failed for ${clientLabel} \u2014 the \`li_at\` cookie has likely expired. Grab a fresh one from your browser and update it.`,
       );
     } else {
-      console.error("Poll failed:", msg);
+      console.error(`[${clientLabel}] Poll failed:`, msg);
     }
     return;
   }
 
-  const newConnections = filterNewConnections(all);
+  const newConnections = filterNewConnections(all, clientId);
 
   if (newConnections.length === 0) {
-    console.log("No new connections");
+    console.log(`[${clientLabel}] No new connections`);
     return;
   }
 
-  console.log(`${newConnections.length} new connection(s) detected`);
+  console.log(`[${clientLabel}] ${newConnections.length} new connection(s) detected`);
 
   const connectionsWithDMs: ConnectionWithDM[] = await Promise.all(
     newConnections.map(async (c) => {
@@ -71,39 +69,89 @@ async function checkConnections(): Promise<void> {
       if (flagged) {
         try {
           suggestedDM = await generateOutreachDM(c);
-          console.log(`Generated DM for ${c.firstName} ${c.lastName} (flagged in hiring channel)`);
+          console.log(`[${clientLabel}] Generated DM for ${c.firstName} ${c.lastName} (flagged in hiring channel)`);
         } catch (err: any) {
-          console.error(`Failed to generate DM for ${c.firstName} ${c.lastName}:`, err?.message);
+          console.error(`[${clientLabel}] Failed to generate DM for ${c.firstName} ${c.lastName}:`, err?.message);
         }
       } else {
-        console.log(`${c.firstName} ${c.lastName} — not flagged, skipping DM`);
+        console.log(`[${clientLabel}] ${c.firstName} ${c.lastName} — not flagged, skipping DM`);
       }
       return { ...c, suggestedDM };
     }),
   );
 
-  await withRetry(() => sendSlackMessage(webhookUrl!, connectionsWithDMs), {
-    label: "Slack send",
+  await withRetry(() => sendSlackMessage(webhookUrl, connectionsWithDMs), {
+    label: `Slack send (${clientLabel})`,
   });
-  markAsSeen(newConnections);
+  markAsSeen(newConnections, clientId);
 }
 
-async function weeklyRecap(): Promise<void> {
-  console.log(`[${new Date().toISOString()}] Sending weekly recap...`);
+async function weeklyRecapForClient(
+  clientLabel: string,
+  webhookUrl: string,
+  clientId?: number,
+): Promise<void> {
+  console.log(`[${new Date().toISOString()}] [${clientLabel}] Sending weekly recap...`);
 
   const since = Date.now() - SEVEN_DAYS_MS;
-  const connections = getConnectionsSince(since);
+  const connections = getConnectionsSince(since, clientId);
 
-  console.log(`Recap: ${connections.length} connection(s) in the last 7 days`);
-  await sendRecapMessage(webhookUrl!, connections);
-  console.log("Recap sent to Slack");
+  console.log(`[${clientLabel}] Recap: ${connections.length} connection(s) in the last 7 days`);
+  await sendRecapMessage(webhookUrl, connections);
+  console.log(`[${clientLabel}] Recap sent to Slack`);
+}
+
+async function checkAllClients(): Promise<void> {
+  const clients = getActiveClients();
+
+  if (clients.length > 0) {
+    for (const client of clients) {
+      try {
+        await checkConnectionsForClient(client.name, client.li_cookie, client.slack_webhook, client.id);
+      } catch (err: any) {
+        console.error(`[${client.name}] Connection check error:`, err?.message);
+      }
+    }
+  }
+
+  // Legacy fallback: if env vars are set, run for them too
+  if (legacyLiAt && legacyWebhookUrl) {
+    try {
+      await checkConnectionsForClient(config.client_name, legacyLiAt, legacyWebhookUrl);
+    } catch (err: any) {
+      console.error(`[${config.client_name}] Connection check error:`, err?.message);
+    }
+  }
+}
+
+async function recapAllClients(): Promise<void> {
+  const clients = getActiveClients();
+
+  if (clients.length > 0) {
+    for (const client of clients) {
+      try {
+        await weeklyRecapForClient(client.name, client.slack_webhook, client.id);
+      } catch (err: any) {
+        console.error(`[${client.name}] Weekly recap error:`, err?.message);
+      }
+    }
+  }
+
+  // Legacy fallback
+  if (legacyLiAt && legacyWebhookUrl) {
+    try {
+      await weeklyRecapForClient(config.client_name, legacyWebhookUrl);
+    } catch (err: any) {
+      console.error(`[${config.client_name}] Weekly recap error:`, err?.message);
+    }
+  }
 }
 
 // --- Scheduling ---
 
 const pollExpr = pollingCron();
 cron.schedule(pollExpr, () => {
-  checkConnections().catch((err) =>
+  checkAllClients().catch((err) =>
     console.error(`[${new Date().toISOString()}] Connection check error:`, err),
   );
 });
@@ -111,7 +159,7 @@ cron.schedule(pollExpr, () => {
 if (config.weekly_recap_enabled) {
   const recapExpr = recapCron();
   cron.schedule(recapExpr, () => {
-    weeklyRecap().catch((err) =>
+    recapAllClients().catch((err) =>
       console.error(`[${new Date().toISOString()}] Weekly recap error:`, err),
     );
   });
@@ -119,7 +167,13 @@ if (config.weekly_recap_enabled) {
 
 // Startup
 startInteractionServer(Number(process.env.PORT) || 3000);
-console.log(`LinkedIn Connections notifier started for ${config.client_name}`);
+
+const dbClients = getActiveClients();
+console.log(`LinkedIn Connections notifier started`);
+console.log(`  - ${dbClients.length} active client(s) in database`);
+if (legacyLiAt && legacyWebhookUrl) {
+  console.log(`  - Legacy env client: ${config.client_name}`);
+}
 console.log(`  - Connection check: every ${config.polling_interval_minutes} minutes`);
 if (config.weekly_recap_enabled) {
   console.log(`  - Weekly recap: ${config.weekly_recap_day}s at ${config.weekly_recap_time_utc} UTC`);
@@ -127,6 +181,6 @@ if (config.weekly_recap_enabled) {
   console.log("  - Weekly recap: disabled");
 }
 
-checkConnections().catch((err) =>
+checkAllClients().catch((err) =>
   console.error(`[${new Date().toISOString()}] Initial check error:`, err),
 );

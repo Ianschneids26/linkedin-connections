@@ -1,10 +1,15 @@
 import express from "express";
+import { adminRouter } from "./admin.js";
 
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 
 export function startInteractionServer(port = 3000): void {
   const app = express();
+  app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+
+  // Admin API
+  app.use("/admin", adminRouter());
 
   app.post("/slack/interactions", async (req, res) => {
     const payload = JSON.parse(req.body.payload);

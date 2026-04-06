@@ -5,7 +5,6 @@ import type { LinkedInConnection } from "./linkedin.js";
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : path.join(path.dirname(new URL(import.meta.url).pathname), "..", "data");
-const STORE_PATH = path.join(DATA_DIR, "seen-connections.json");
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -16,11 +15,20 @@ interface StoreData {
   connections: StoredConnection[];
 }
 
-function read(): StoreData {
-  if (!fs.existsSync(STORE_PATH)) {
+/** Resolve the store file path for a given client (or the default global store). */
+function storePath(clientId?: number): string {
+  const filename = clientId
+    ? `seen-connections-${clientId}.json`
+    : "seen-connections.json";
+  return path.join(DATA_DIR, filename);
+}
+
+function read(clientId?: number): StoreData {
+  const p = storePath(clientId);
+  if (!fs.existsSync(p)) {
     return { seenIds: [], connections: [] };
   }
-  const raw = fs.readFileSync(STORE_PATH, "utf-8");
+  const raw = fs.readFileSync(p, "utf-8");
   const parsed = JSON.parse(raw);
   return {
     seenIds: parsed.seenIds ?? [],
@@ -28,26 +36,30 @@ function read(): StoreData {
   };
 }
 
-function write(data: StoreData): void {
+function write(data: StoreData, clientId?: number): void {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
   // Prune connections older than 7 days
   const cutoff = Date.now() - SEVEN_DAYS_MS;
   data.connections = data.connections.filter((c) => c.seenAt >= cutoff);
-  fs.writeFileSync(STORE_PATH, JSON.stringify(data, null, 2));
+  fs.writeFileSync(storePath(clientId), JSON.stringify(data, null, 2));
 }
 
 export function filterNewConnections(
   connections: LinkedInConnection[],
+  clientId?: number,
 ): LinkedInConnection[] {
-  const store = read();
+  const store = read(clientId);
   const seenSet = new Set(store.seenIds);
   return connections.filter((c) => !seenSet.has(c.id));
 }
 
-export function markAsSeen(connections: LinkedInConnection[]): void {
-  const store = read();
+export function markAsSeen(
+  connections: LinkedInConnection[],
+  clientId?: number,
+): void {
+  const store = read(clientId);
   const seenSet = new Set(store.seenIds);
   const now = Date.now();
 
@@ -63,10 +75,13 @@ export function markAsSeen(connections: LinkedInConnection[]): void {
     }
   }
 
-  write({ seenIds: [...seenSet], connections: store.connections });
+  write({ seenIds: [...seenSet], connections: store.connections }, clientId);
 }
 
-export function getConnectionsSince(since: number): StoredConnection[] {
-  const store = read();
+export function getConnectionsSince(
+  since: number,
+  clientId?: number,
+): StoredConnection[] {
+  const store = read(clientId);
   return store.connections.filter((c) => c.seenAt >= since);
 }
